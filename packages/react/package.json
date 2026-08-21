@@ -1,15 +1,15 @@
 {
   "name": "@tbib-pdf-viewer/react",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "React wrapper for TBiB PDF Viewer",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
   },
   "files": [
@@ -25,7 +25,7 @@
     "react-dom": ">=18.0.0"
   },
   "dependencies": {
-    "@tbib-pdf-viewer/core": "*"
+    "@tbib-pdf-viewer/core": "^0.1.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
