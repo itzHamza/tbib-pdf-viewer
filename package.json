@@ -1,0 +1,19 @@
+{
+  "name": "tbib-pdf-viewer-monorepo",
+  "private": true,
+  "description": "Monorepo for TBiB PDF Viewer",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspace=@tbib-pdf-viewer/demo"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1",
+    "typescript": "^5.4.5",
+    "tsup": "^8.0.2",
+    "vitest": "^1.6.0"
+  }
+}
