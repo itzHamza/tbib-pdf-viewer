@@ -26,11 +26,11 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Run Tests
-        run: npm run test
-
       - name: Build Packages
         run: npm run build
+
+      - name: Run Tests
+        run: npm run test
 
       # Automatically publish to npm if on main and NPM_TOKEN is provided
       - name: Create Release Pull Request or Publish to npm
