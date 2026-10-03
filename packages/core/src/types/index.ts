@@ -3,6 +3,7 @@ export type ToolType =
   | 'highlight'
   | 'rectangle'
   | 'ellipse'
+  | 'text'
   | 'note'
   | 'select'
   | 'pan';
@@ -40,7 +41,9 @@ export interface HighlightRect {
 
 export interface HighlightAnnotation extends BaseAnnotation {
   type: 'highlight';
-  rects: HighlightRect[]; // text-selection quads in unscaled PDF-space
+  rects?: HighlightRect[]; // text-selection quads in unscaled PDF-space
+  points?: [number, number][]; // freehand highlighter path
+  strokeWidth?: number;
   isFreehandFallback?: boolean;
 }
 
@@ -61,11 +64,21 @@ export interface NoteAnnotation extends BaseAnnotation {
   content: string;
 }
 
+export interface TextAnnotation extends BaseAnnotation {
+  type: 'text';
+  x: number;
+  y: number;
+  text: string;
+  fontSize: number;
+  fontFamily?: string;
+}
+
 export type Annotation =
   | StrokeAnnotation
   | HighlightAnnotation
   | ShapeAnnotation
-  | NoteAnnotation;
+  | NoteAnnotation
+  | TextAnnotation;
 
 export interface AnnotationDocument {
   version: 1;
@@ -86,10 +99,16 @@ export interface PdfAnnotatorOptions {
   fillColor?: string;
   opacity?: number;
   strokeWidth?: number;
+  fontSize?: number;
   initialScale?: number;
+  fitWidth?: boolean;
+  theme?: 'light' | 'dark';
   enableLazyRendering?: boolean;
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onScannedPageDetected?: (page: number) => void;
+  onLoading?: (isLoading: boolean) => void;
+  onError?: (error: Error) => void;
+  onZoomChange?: (scale: number) => void;
 }
 
 export interface PageDimensions {

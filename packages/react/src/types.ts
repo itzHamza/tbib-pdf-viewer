@@ -15,7 +15,9 @@ export interface PdfViewerProps {
   fillColor?: string;
   opacity?: number;
   strokeWidth?: number;
+  fontSize?: number;
   zoom?: number;
+  theme?: 'light' | 'dark';
   workerSrc?: string;
   className?: string;
   style?: React.CSSProperties;
@@ -23,6 +25,11 @@ export interface PdfViewerProps {
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onScannedPageDetected?: (page: number) => void;
   onAnnotatorReady?: (annotator: PdfAnnotator) => void;
+  onLoading?: (isLoading: boolean) => void;
+  onError?: (error: Error | string) => void;
+  renderLoading?: () => React.ReactNode;
+  renderError?: (error: string, retry: () => void) => React.ReactNode;
+  enablePinchZoom?: boolean;
 }
 
 export interface PdfToolbarProps {
@@ -35,14 +42,20 @@ export interface PdfToolbarProps {
   onFillColorChange?: (fillColor: string) => void;
   strokeWidth?: number;
   onStrokeWidthChange?: (width: number) => void;
+  fontSize?: number;
+  onFontSizeChange?: (size: number) => void;
   opacity?: number;
   onOpacityChange?: (opacity: number) => void;
+  theme?: 'light' | 'dark';
   currentPage?: number;
   totalPages?: number;
   onPageChange?: (page: number) => void;
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
   onExportPdf?: () => void;
+  isExporting?: boolean;
+  onUploadPdf?: (file: File) => void;
+  showUpload?: boolean;
   onToggleProperties?: () => void;
   isPropertiesOpen?: boolean;
   className?: string;
@@ -58,7 +71,10 @@ export interface PropertiesPanelProps {
   onFillColorChange?: (fillColor: string) => void;
   strokeWidth?: number;
   onStrokeWidthChange?: (width: number) => void;
+  fontSize?: number;
+  onFontSizeChange?: (size: number) => void;
   opacity?: number;
   onOpacityChange?: (opacity: number) => void;
+  theme?: 'light' | 'dark';
   style?: React.CSSProperties;
 }

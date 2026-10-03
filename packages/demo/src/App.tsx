@@ -56,7 +56,7 @@ export default function App() {
       else if (e.key === '3') setCurrentTool('ellipse');
       else if (e.key === '4' || e.key === 'p' || e.key === 'P') setCurrentTool('pen');
       else if (e.key === '5') setCurrentTool('highlight');
-      else if (e.key === '6' || e.key === 't' || e.key === 'T') setCurrentTool('note');
+      else if (e.key === '6' || e.key === 't' || e.key === 'T') setCurrentTool('text');
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -389,6 +389,7 @@ export default function App() {
               opacity={opacity}
               onOpacityChange={setOpacity}
               onExportPdf={handleExportPdf}
+              isExporting={isExporting}
             />
           </div>
 

@@ -70,6 +70,26 @@ describe('PDF Export & Flattening', () => {
           content: 'Important revision question',
           createdAt: 5,
         },
+        {
+          id: 'text_1',
+          type: 'text',
+          page: 1,
+          color: '#1e1e1e',
+          fontSize: 16,
+          x: 100,
+          y: 400,
+          text: 'Hello TBiB PDF text annotation!',
+          createdAt: 6,
+        },
+        {
+          id: 'hl_freehand',
+          type: 'highlight',
+          page: 1,
+          color: '#a3e635',
+          points: [[100, 450], [200, 450], [300, 450]],
+          strokeWidth: 18,
+          createdAt: 7,
+        },
       ],
     };
 

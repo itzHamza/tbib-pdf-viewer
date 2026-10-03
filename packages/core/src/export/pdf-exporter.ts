@@ -6,6 +6,7 @@ import {
   HighlightAnnotation,
   ShapeAnnotation,
   NoteAnnotation,
+  TextAnnotation,
 } from '../types';
 import { generateStrokeOutline, getSvgPathFromStroke } from '../annotations/pen-renderer';
 
@@ -80,15 +81,63 @@ export async function exportPdfWithAnnotations(
         }
       } else if (ann.type === 'highlight') {
         const hlAnn = ann as HighlightAnnotation;
-        for (const rect of hlAnn.rects) {
-          page.drawRectangle({
-            x: rect.x,
-            y: pageHeight - (rect.y + rect.height),
-            width: rect.width,
-            height: rect.height,
-            color: pdfColor,
-            opacity: hlAnn.opacity !== undefined ? hlAnn.opacity * 0.4 : 0.35,
-          });
+        const hlOpacity = hlAnn.opacity !== undefined ? hlAnn.opacity * 0.4 : 0.35;
+
+        // Text-snapped rectangles
+        if (hlAnn.rects && hlAnn.rects.length > 0) {
+          for (const rect of hlAnn.rects) {
+            page.drawRectangle({
+              x: rect.x,
+              y: pageHeight - (rect.y + rect.height),
+              width: rect.width,
+              height: rect.height,
+              color: pdfColor,
+              opacity: hlOpacity,
+            });
+          }
+        }
+
+        // Freehand highlighter stroke
+        if (hlAnn.points && hlAnn.points.length >= 2) {
+          const thickness = hlAnn.strokeWidth || 18;
+          for (let i = 0; i < hlAnn.points.length - 1; i++) {
+            const p1 = hlAnn.points[i];
+            const p2 = hlAnn.points[i + 1];
+            page.drawLine({
+              start: { x: p1[0], y: pageHeight - p1[1] },
+              end: { x: p2[0], y: pageHeight - p2[1] },
+              thickness,
+              color: pdfColor,
+              opacity: hlOpacity,
+            });
+          }
+        }
+      } else if (ann.type === 'text') {
+        const textAnn = ann as TextAnnotation;
+        if (textAnn.text) {
+          const fontSize = textAnn.fontSize || 18;
+          const lineHeight = fontSize * 1.25;
+          const lines = textAnn.text.split('\n');
+          const opacity = textAnn.opacity !== undefined ? textAnn.opacity : 1;
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line) continue;
+
+            const safeLine = line.replace(/[^\x20-\x7E]/g, '?');
+            try {
+              page.drawText(safeLine, {
+                x: textAnn.x,
+                y: pageHeight - textAnn.y - fontSize - i * lineHeight,
+                size: fontSize,
+                font,
+                color: pdfColor,
+                opacity,
+              });
+            } catch {
+              // Ignore font encoding error
+            }
+          }
         }
       } else if (ann.type === 'rectangle') {
         const shapeAnn = ann as ShapeAnnotation;
@@ -141,7 +190,6 @@ export async function exportPdfWithAnnotations(
         const x = noteAnn.x;
         const y = pageHeight - noteAnn.y;
 
-        // Draw note icon / pin
         page.drawCircle({
           x,
           y,
@@ -150,7 +198,6 @@ export async function exportPdfWithAnnotations(
         });
 
         if (noteAnn.content) {
-          // Sanitize content for WinAnsi standard font
           const safeContent = noteAnn.content.replace(/[^\x20-\x7E]/g, '?');
           const truncatedContent = safeContent.length > 60
             ? safeContent.substring(0, 57) + '...'
@@ -175,7 +222,7 @@ export async function exportPdfWithAnnotations(
               color: rgb(0.1, 0.1, 0.1),
             });
           } catch {
-            // Ignore text encoding error if font fails
+            // Ignore font encoding error
           }
         }
       }

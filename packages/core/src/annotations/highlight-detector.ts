@@ -137,27 +137,50 @@ export function findIntersectingQuads(
 }
 
 /**
- * Draws highlight annotation rectangles onto canvas
+ * Draws highlight annotation (both text-snapped rectangles and freehand highlighter paths) onto canvas
  */
 export function drawHighlightAnnotation(
   ctx: CanvasRenderingContext2D,
   annotation: HighlightAnnotation,
   scale: number
 ): void {
-  if (!annotation.rects || annotation.rects.length === 0) return;
+  const color = annotation.color || '#ffeb3b';
+  const opacity = annotation.opacity !== undefined ? annotation.opacity * 0.4 : 0.38;
 
   ctx.save();
-  ctx.fillStyle = annotation.color || '#ffeb3b';
-  ctx.globalAlpha = 0.4;
   ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = opacity;
 
-  for (const rect of annotation.rects) {
-    ctx.fillRect(
-      rect.x * scale,
-      rect.y * scale,
-      rect.width * scale,
-      rect.height * scale
-    );
+  // 1. Text-snapped quad rectangles
+  if (annotation.rects && annotation.rects.length > 0) {
+    ctx.fillStyle = color;
+    for (const rect of annotation.rects) {
+      ctx.fillRect(
+        rect.x * scale,
+        rect.y * scale,
+        rect.width * scale,
+        rect.height * scale
+      );
+    }
+  }
+
+  // 2. Freehand highlighter stroke path
+  if (annotation.points && annotation.points.length >= 2) {
+    const strokeWidth = (annotation.strokeWidth || 18) * scale;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = strokeWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(annotation.points[0][0] * scale, annotation.points[0][1] * scale);
+
+    for (let i = 1; i < annotation.points.length; i++) {
+      const p = annotation.points[i];
+      ctx.lineTo(p[0] * scale, p[1] * scale);
+    }
+
+    ctx.stroke();
   }
 
   ctx.restore();

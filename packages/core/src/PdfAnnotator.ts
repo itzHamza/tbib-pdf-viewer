@@ -58,6 +58,8 @@ export class PdfAnnotator {
       }
     );
 
+    this.setTheme(options.theme || 'light');
+
     if (options.tool) this.overlayManager.setTool(options.tool);
     if (options.color) this.overlayManager.setColor(options.color);
     if (options.fillColor) this.overlayManager.setFillColor(options.fillColor);
@@ -111,11 +113,27 @@ export class PdfAnnotator {
 
   async loadPdf(src: PdfSource): Promise<void> {
     this.clearPages();
+    if (this.options.onLoading) {
+      this.options.onLoading(true);
+    }
 
     try {
       const pdfDoc = await this.loader.load(src);
       this.totalPages = pdfDoc.numPages;
       this.currentPage = 1;
+
+      // Auto-fit wide pages to container width on initial load
+      if (this.totalPages > 0) {
+        const firstPage = await pdfDoc.getPage(1);
+        const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
+        const containerWidth = this.container.clientWidth;
+        if (containerWidth > 0 && (!this.options.initialScale || this.options.initialScale === 1.0)) {
+          const availableWidth = containerWidth - 48;
+          if (unscaledViewport.width > availableWidth) {
+            this.currentScale = Math.max(0.1, +(availableWidth / unscaledViewport.width).toFixed(2));
+          }
+        }
+      }
 
       // Create page views placeholders
       for (let i = 1; i <= this.totalPages; i++) {
@@ -149,7 +167,17 @@ export class PdfAnnotator {
       if (this.options.onPageChange) {
         this.options.onPageChange(this.currentPage, this.totalPages);
       }
+
+      if (this.options.onLoading) {
+        this.options.onLoading(false);
+      }
     } catch (error) {
+      if (this.options.onLoading) {
+        this.options.onLoading(false);
+      }
+      if (this.options.onError) {
+        this.options.onError(error instanceof Error ? error : new Error(String(error)));
+      }
       console.error('Failed to load PDF document:', error);
       throw error;
     }
@@ -189,7 +217,29 @@ export class PdfAnnotator {
     this.overlayManager.setStrokeWidth(width);
   }
 
-  setZoom(scale: number): void {
+  setFontSize(fontSize: number): void {
+    this.overlayManager.setFontSize(fontSize);
+  }
+
+  setTheme(theme: 'light' | 'dark'): void {
+    const isDark = theme === 'dark';
+    this.container.style.backgroundColor = isDark ? '#12141a' : '#f8f9fa';
+    if (this.pagesContainer) {
+      this.pagesContainer.style.backgroundColor = isDark ? '#12141a' : '#f8f9fa';
+    }
+  }
+
+  fitToWidth(): void {
+    if (this.pageViews.length === 0 || !this.container) return;
+    const firstPv = this.pageViews[0];
+    const origW = firstPv.getDimensions().originalWidth;
+    if (!origW) return;
+    const availableWidth = this.container.clientWidth - 48;
+    const scale = Math.max(0.1, +(availableWidth / origW).toFixed(2));
+    this.setZoom(scale);
+  }
+
+  setZoom(scale: number, notify = true): void {
     if (scale <= 0.1 || scale > 5) return;
     this.currentScale = scale;
 
@@ -197,6 +247,31 @@ export class PdfAnnotator {
       pageView.setScale(scale);
       this.overlayManager.renderPageAnnotations(pageView.pageNumber);
     }
+
+    if (notify && this.options.onZoomChange) {
+      this.options.onZoomChange(this.currentScale);
+    }
+  }
+
+  setZoomCentered(scale: number, clientX?: number, clientY?: number): void {
+    if (scale <= 0.1 || scale > 5 || scale === this.currentScale) return;
+    const oldScale = this.currentScale;
+    const containerRect = this.container.getBoundingClientRect();
+    const cx = clientX !== undefined ? clientX - containerRect.left : containerRect.width / 2;
+    const cy = clientY !== undefined ? clientY - containerRect.top : containerRect.height / 2;
+
+    const prevScrollLeft = this.container.scrollLeft;
+    const prevScrollTop = this.container.scrollTop;
+
+    this.setZoom(scale);
+
+    const ratio = scale / oldScale;
+    this.container.scrollLeft = (prevScrollLeft + cx) * ratio - cx;
+    this.container.scrollTop = (prevScrollTop + cy) * ratio - cy;
+  }
+
+  cancelActiveInteraction(): void {
+    this.overlayManager.cancelInteraction();
   }
 
   getZoom(): number {

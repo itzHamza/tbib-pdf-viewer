@@ -5,6 +5,7 @@ import {
   HighlightAnnotation,
   ShapeAnnotation,
   NoteAnnotation,
+  TextAnnotation,
   ToolType,
   HighlightRect,
 } from '../types';
@@ -13,6 +14,7 @@ import { drawStrokeAnnotation } from './pen-renderer';
 import { drawHighlightAnnotation, findIntersectingQuads } from './highlight-detector';
 import { drawShapeAnnotation } from './shape-renderer';
 import { drawNoteAnnotation, isPointInNote } from './note-manager';
+import { drawTextAnnotation, isPointInTextAnnotation } from './text-renderer';
 import { CommandManager } from '../commands/command-manager';
 import {
   AddAnnotationCommand,
@@ -30,6 +32,7 @@ export class OverlayManager {
   private currentFillColor = 'transparent';
   private currentOpacity = 1;
   private currentStrokeWidth = 3;
+  private currentFontSize = 18;
   private pageViews: Map<number, PageView> = new Map();
   private onChangeCallback?: (doc: AnnotationDocument) => void;
   private debounceTimer: any = null;
@@ -47,6 +50,7 @@ export class OverlayManager {
   private dragStartPoint: { x: number; y: number } | null = null;
   private dragCurrentPoint: { x: number; y: number } | null = null;
   private movingAnnotationInitialState: Annotation | null = null;
+  private activePointerIds: Set<number> = new Set();
 
   constructor(commandManager: CommandManager, onChange?: (doc: AnnotationDocument) => void) {
     this.commandManager = commandManager;
@@ -71,6 +75,8 @@ export class OverlayManager {
       this.currentTool === 'ellipse'
     ) {
       cursor = 'crosshair';
+    } else if (this.currentTool === 'text') {
+      cursor = 'text';
     } else if (this.currentTool === 'note') {
       cursor = 'pointer';
     } else if (this.currentTool === 'select') {
@@ -96,6 +102,10 @@ export class OverlayManager {
 
   setStrokeWidth(width: number): void {
     this.currentStrokeWidth = width;
+  }
+
+  setFontSize(fontSize: number): void {
+    this.currentFontSize = fontSize;
   }
 
   registerPageView(pageView: PageView): void {
@@ -165,17 +175,17 @@ export class OverlayManager {
     }
   }
 
-  private internalAdd(annotation: Annotation): void {
-    this.annotations.push(annotation);
-    this.renderPageAnnotations(annotation.page);
+  private internalAdd(ann: Annotation): void {
+    this.annotations.push(ann);
+    this.renderPageAnnotations(ann.page);
     this.triggerChange();
   }
 
   private internalRemove(id: string): void {
-    const index = this.annotations.findIndex((a) => a.id === id);
-    if (index !== -1) {
-      const page = this.annotations[index].page;
-      this.annotations.splice(index, 1);
+    const idx = this.annotations.findIndex((a) => a.id === id);
+    if (idx !== -1) {
+      const page = this.annotations[idx].page;
+      this.annotations.splice(idx, 1);
       if (this.selectedAnnotationId === id) {
         this.selectedAnnotationId = null;
       }
@@ -185,12 +195,28 @@ export class OverlayManager {
   }
 
   private internalUpdate(updated: Annotation): void {
-    const index = this.annotations.findIndex((a) => a.id === updated.id);
-    if (index !== -1) {
-      this.annotations[index] = updated;
+    const idx = this.annotations.findIndex((a) => a.id === updated.id);
+    if (idx !== -1) {
+      this.annotations[idx] = updated;
       this.renderPageAnnotations(updated.page);
       this.triggerChange();
     }
+  }
+
+  undo(): void {
+    this.commandManager.undo();
+  }
+
+  redo(): void {
+    this.commandManager.redo();
+  }
+
+  canUndo(): boolean {
+    return this.commandManager.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.commandManager.canRedo();
   }
 
   renderPageAnnotations(pageNumber: number): void {
@@ -231,7 +257,19 @@ export class OverlayManager {
       }
     }
 
-    // 4. Draw Notes
+    // 4. Draw Text annotations
+    for (const ann of pageAnns) {
+      if (ann.type === 'text') {
+        drawTextAnnotation(
+          ctx,
+          ann as TextAnnotation,
+          scale,
+          ann.id === this.selectedAnnotationId
+        );
+      }
+    }
+
+    // 5. Draw Notes (for backwards compatibility)
     for (const ann of pageAnns) {
       if (ann.type === 'note') {
         drawNoteAnnotation(
@@ -243,7 +281,7 @@ export class OverlayManager {
       }
     }
 
-    // 5. Draw active in-progress preview (during drawing/dragging)
+    // 6. Draw active in-progress preview (during drawing/dragging)
     if (this.isDrawing && this.activePageNumber === pageNumber) {
       this.drawActivePreview(ctx, scale, pageView);
     }
@@ -277,20 +315,37 @@ export class OverlayManager {
       };
 
       const textLayerData = pageView.getTextLayerData();
-      const rects = textLayerData && !textLayerData.isScanned
+      const hasTextQuads = textLayerData && !textLayerData.isScanned && textLayerData.textQuads.length > 0;
+      const intersectingQuads = hasTextQuads
         ? findIntersectingQuads(selRect, textLayerData.textQuads)
-        : [selRect];
+        : [];
 
-      const tempHl: HighlightAnnotation = {
-        id: 'temp',
-        type: 'highlight',
-        page: this.activePageNumber!,
-        color: this.currentColor || '#ffeb3b',
-        opacity: this.currentOpacity,
-        rects: rects,
-        createdAt: Date.now(),
-      };
-      drawHighlightAnnotation(ctx, tempHl, scale);
+      if (intersectingQuads.length > 0 && !(intersectingQuads.length === 1 && intersectingQuads[0] === selRect)) {
+        // Text snapped highlight preview
+        const tempHl: HighlightAnnotation = {
+          id: 'temp',
+          type: 'highlight',
+          page: this.activePageNumber!,
+          color: this.currentColor || '#ffeb3b',
+          opacity: this.currentOpacity,
+          rects: intersectingQuads,
+          createdAt: Date.now(),
+        };
+        drawHighlightAnnotation(ctx, tempHl, scale);
+      } else if (this.currentPoints.length >= 2) {
+        // Freehand highlighter stroke preview
+        const freehandHl: HighlightAnnotation = {
+          id: 'temp',
+          type: 'highlight',
+          page: this.activePageNumber!,
+          color: this.currentColor || '#ffeb3b',
+          opacity: this.currentOpacity,
+          points: this.currentPoints.map((p) => [p[0], p[1]]),
+          strokeWidth: 18,
+          createdAt: Date.now(),
+        };
+        drawHighlightAnnotation(ctx, freehandHl, scale);
+      }
     } else if (
       (this.currentTool === 'rectangle' || this.currentTool === 'ellipse') &&
       this.dragStartPoint &&
@@ -343,6 +398,19 @@ export class OverlayManager {
     window.addEventListener('pointerup', (e) => this.handlePointerUp(e));
     window.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
 
+    // Double click to edit text annotation in select mode
+    canvas.addEventListener('dblclick', (e) => {
+      if (this.currentTool === 'select') {
+        const pt = pageView.screenToPdfPoint(e.clientX, e.clientY);
+        const scale = pageView.getDimensions().scale;
+        const pageAnns = this.annotations.filter((a) => a.page === pageView.pageNumber && a.type === 'text') as TextAnnotation[];
+        const hit = pageAnns.find((ann) => isPointInTextAnnotation(pt.x * scale, pt.y * scale, ann, scale));
+        if (hit) {
+          this.openTextEditor(hit, pageView);
+        }
+      }
+    });
+
     // Keyboard delete for selected annotation
     window.addEventListener('keydown', (e) => {
       if (
@@ -356,7 +424,30 @@ export class OverlayManager {
     });
   }
 
+  cancelInteraction(): void {
+    if (this.isDrawing || this.isPanning) {
+      const pageToRedraw = this.activePageNumber;
+      this.isDrawing = false;
+      this.isPanning = false;
+      this.panContainer = null;
+      this.currentPoints = [];
+      this.dragStartPoint = null;
+      this.dragCurrentPoint = null;
+      this.activePageNumber = null;
+      if (pageToRedraw !== null) {
+        this.renderPageAnnotations(pageToRedraw);
+      }
+      this.updateCursors();
+    }
+  }
+
   private handlePointerDown(e: PointerEvent, pageView: PageView): void {
+    this.activePointerIds.add(e.pointerId);
+    if (this.activePointerIds.size > 1) {
+      this.cancelInteraction();
+      return;
+    }
+
     if (this.currentTool === 'pan') {
       e.preventDefault();
       this.isPanning = true;
@@ -384,6 +475,37 @@ export class OverlayManager {
 
     if (this.currentTool === 'pen') {
       this.currentPoints = [[pt.x, pt.y, pressure]];
+    } else if (this.currentTool === 'highlight') {
+      this.currentPoints = [[pt.x, pt.y]];
+    } else if (this.currentTool === 'text') {
+      this.isDrawing = false;
+      const scale = pageView.getDimensions().scale;
+
+      // Check if clicking existing text to select/edit
+      const pageAnns = this.annotations.filter((a) => a.page === pageView.pageNumber && a.type === 'text') as TextAnnotation[];
+      const hit = pageAnns.find((ann) => isPointInTextAnnotation(pt.x * scale, pt.y * scale, ann, scale));
+
+      if (hit) {
+        this.selectedAnnotationId = hit.id;
+        this.renderPageAnnotations(pageView.pageNumber);
+        this.openTextEditor(hit, pageView);
+        return;
+      }
+
+      // Create new text annotation
+      const newText: TextAnnotation = {
+        id: 'text_' + Math.random().toString(36).substring(2, 9),
+        type: 'text',
+        page: pageView.pageNumber,
+        color: this.currentColor || '#1e1e1e',
+        fontSize: this.currentFontSize || 18,
+        x: pt.x,
+        y: pt.y,
+        text: '',
+        createdAt: Date.now(),
+      };
+
+      this.openTextEditor(newText, pageView, true);
     } else if (this.currentTool === 'note') {
       // Check if clicked existing note
       const pageAnns = this.annotations.filter(
@@ -419,14 +541,20 @@ export class OverlayManager {
       this.openNoteEditor(newNote, pageView);
       this.isDrawing = false;
     } else if (this.currentTool === 'select') {
-      // Hit testing notes/shapes
+      // Hit testing text, notes, shapes
       const pageAnns = this.annotations.filter((a) => a.page === pageView.pageNumber);
       let hitId: string | null = null;
+      const scale = pageView.getDimensions().scale;
 
       for (let i = pageAnns.length - 1; i >= 0; i--) {
         const ann = pageAnns[i];
-        if (ann.type === 'note') {
-          if (isPointInNote(pt.x * pageView.getDimensions().scale, pt.y * pageView.getDimensions().scale, ann as NoteAnnotation, pageView.getDimensions().scale)) {
+        if (ann.type === 'text') {
+          if (isPointInTextAnnotation(pt.x * scale, pt.y * scale, ann as TextAnnotation, scale)) {
+            hitId = ann.id;
+            break;
+          }
+        } else if (ann.type === 'note') {
+          if (isPointInNote(pt.x * scale, pt.y * scale, ann as NoteAnnotation, scale)) {
             hitId = ann.id;
             break;
           }
@@ -449,6 +577,10 @@ export class OverlayManager {
   }
 
   private handlePointerMove(e: PointerEvent): void {
+    if (this.activePointerIds.size > 1) {
+      return;
+    }
+
     if (this.isPanning && this.panContainer) {
       const dx = e.clientX - this.panStartX;
       const dy = e.clientY - this.panStartY;
@@ -468,8 +600,11 @@ export class OverlayManager {
     if (this.currentTool === 'pen') {
       this.currentPoints.push([pt.x, pt.y, pressure]);
       this.renderPageAnnotations(this.activePageNumber);
+    } else if (this.currentTool === 'highlight') {
+      this.currentPoints.push([pt.x, pt.y]);
+      this.dragCurrentPoint = { x: pt.x, y: pt.y };
+      this.renderPageAnnotations(this.activePageNumber);
     } else if (
-      this.currentTool === 'highlight' ||
       this.currentTool === 'rectangle' ||
       this.currentTool === 'ellipse'
     ) {
@@ -480,7 +615,14 @@ export class OverlayManager {
       const dy = pt.y - this.dragStartPoint.y;
       const initial = this.movingAnnotationInitialState;
 
-      if (initial.type === 'note') {
+      if (initial.type === 'text') {
+        const updated: TextAnnotation = {
+          ...initial,
+          x: initial.x + dx,
+          y: initial.y + dy,
+        };
+        this.internalUpdate(updated);
+      } else if (initial.type === 'note') {
         const updated: NoteAnnotation = {
           ...initial,
           x: initial.x + dx,
@@ -499,6 +641,8 @@ export class OverlayManager {
   }
 
   private handlePointerUp(e: PointerEvent): void {
+    this.activePointerIds.delete(e.pointerId);
+
     if (this.isPanning) {
       this.isPanning = false;
       this.panContainer = null;
@@ -532,30 +676,45 @@ export class OverlayManager {
       const width = Math.abs(this.dragCurrentPoint.x - this.dragStartPoint.x);
       const height = Math.abs(this.dragCurrentPoint.y - this.dragStartPoint.y);
 
-      if (width > 3 && height > 3) {
-        const selRect: HighlightRect = {
-          x: Math.min(this.dragStartPoint.x, this.dragCurrentPoint.x),
-          y: Math.min(this.dragStartPoint.y, this.dragCurrentPoint.y),
-          width,
-          height,
-        };
+      const selRect: HighlightRect = {
+        x: Math.min(this.dragStartPoint.x, this.dragCurrentPoint.x),
+        y: Math.min(this.dragStartPoint.y, this.dragCurrentPoint.y),
+        width: Math.max(width, 1),
+        height: Math.max(height, 1),
+      };
 
-        const textLayerData = pageView.getTextLayerData();
-        const rects = textLayerData && !textLayerData.isScanned
-          ? findIntersectingQuads(selRect, textLayerData.textQuads)
-          : [selRect];
+      const textLayerData = pageView.getTextLayerData();
+      const hasTextQuads = textLayerData && !textLayerData.isScanned && textLayerData.textQuads.length > 0;
+      const intersectingQuads = hasTextQuads
+        ? findIntersectingQuads(selRect, textLayerData.textQuads)
+        : [];
 
+      if (intersectingQuads.length > 0 && !(intersectingQuads.length === 1 && intersectingQuads[0] === selRect)) {
+        // Text-snapped highlight
         const newHl: HighlightAnnotation = {
           id: 'hl_' + Math.random().toString(36).substring(2, 9),
           type: 'highlight',
           page: pageNumber,
           color: this.currentColor || '#ffeb3b',
           opacity: this.currentOpacity,
-          rects: rects,
-          isFreehandFallback: textLayerData?.isScanned,
+          rects: intersectingQuads,
           createdAt: Date.now(),
         };
         this.addAnnotation(newHl);
+      } else if (this.currentPoints.length >= 2) {
+        // Freehand highlighter stroke with real marker look
+        const freehandHl: HighlightAnnotation = {
+          id: 'hl_' + Math.random().toString(36).substring(2, 9),
+          type: 'highlight',
+          page: pageNumber,
+          color: this.currentColor || '#ffeb3b',
+          opacity: this.currentOpacity,
+          points: this.currentPoints.map((p) => [p[0], p[1]]),
+          strokeWidth: 18,
+          isFreehandFallback: true,
+          createdAt: Date.now(),
+        };
+        this.addAnnotation(freehandHl);
       }
     } else if (
       (this.currentTool === 'rectangle' || this.currentTool === 'ellipse') &&
@@ -601,8 +760,90 @@ export class OverlayManager {
     this.renderPageAnnotations(pageNumber);
   }
 
+  /**
+   * Inline interactive text box editor for TextAnnotation
+   */
+  private openTextEditor(textAnn: TextAnnotation, pageView: PageView, isNew = false): void {
+    // Remove existing text editors
+    const existing = pageView.container.querySelector('.tbib-text-editor');
+    if (existing) existing.remove();
+
+    const scale = pageView.getDimensions().scale;
+    const fontSize = (textAnn.fontSize || this.currentFontSize || 18) * scale;
+    const fontFamily = textAnn.fontFamily || "'Rubik', sans-serif";
+
+    const editor = document.createElement('textarea');
+    editor.className = 'tbib-text-editor';
+    editor.value = textAnn.text || '';
+    editor.placeholder = 'Type text here...';
+    editor.style.position = 'absolute';
+    editor.style.left = `${textAnn.x * scale}px`;
+    editor.style.top = `${textAnn.y * scale}px`;
+    editor.style.zIndex = '100';
+    editor.style.font = `500 ${fontSize}px ${fontFamily}`;
+    editor.style.color = textAnn.color || this.currentColor || '#1e1e1e';
+    editor.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+    editor.style.border = '1.5px dashed #6965db';
+    editor.style.borderRadius = '4px';
+    editor.style.padding = '3px 6px';
+    editor.style.margin = '0';
+    editor.style.outline = 'none';
+    editor.style.resize = 'both';
+    editor.style.minWidth = `${fontSize * 5}px`;
+    editor.style.minHeight = `${fontSize * 1.5}px`;
+    editor.style.lineHeight = '1.25';
+    editor.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
+    editor.style.boxSizing = 'border-box';
+
+    // Auto-resize
+    const autoResize = () => {
+      editor.style.height = 'auto';
+      editor.style.height = `${editor.scrollHeight}px`;
+      editor.style.width = 'auto';
+      editor.style.width = `${Math.max(editor.scrollWidth, fontSize * 5)}px`;
+    };
+
+    editor.addEventListener('input', autoResize);
+
+    const finishEditing = () => {
+      const val = editor.value.trim();
+      editor.remove();
+
+      if (val.length > 0) {
+        if (isNew) {
+          const created: TextAnnotation = {
+            ...textAnn,
+            text: editor.value,
+          };
+          this.addAnnotation(created);
+          this.selectedAnnotationId = created.id;
+        } else {
+          const updated: TextAnnotation = {
+            ...textAnn,
+            text: editor.value,
+          };
+          this.updateAnnotation(updated);
+        }
+      } else if (!isNew) {
+        this.deleteAnnotation(textAnn.id);
+      }
+      this.renderPageAnnotations(pageView.pageNumber);
+    };
+
+    editor.addEventListener('blur', finishEditing);
+    editor.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        editor.remove();
+        this.renderPageAnnotations(pageView.pageNumber);
+      }
+    });
+
+    pageView.container.appendChild(editor);
+    editor.focus();
+    autoResize();
+  }
+
   private openNoteEditor(note: NoteAnnotation, pageView: PageView): void {
-    // Remove existing popups
     const existing = pageView.container.querySelector('.tbib-note-editor');
     if (existing) existing.remove();
 
@@ -622,7 +863,6 @@ export class OverlayManager {
     popup.style.fontFamily = "'Rubik', sans-serif";
     popup.style.boxSizing = 'border-box';
 
-    // Note Card Header
     const header = document.createElement('div');
     header.style.display = 'flex';
     header.style.justifyContent = 'space-between';
@@ -664,15 +904,6 @@ export class OverlayManager {
     textarea.style.fontFamily = "'Rubik', sans-serif";
     textarea.style.resize = 'none';
     textarea.style.outline = 'none';
-
-    textarea.onfocus = () => {
-      textarea.style.borderColor = '#6965db';
-      textarea.style.boxShadow = '0 0 0 2px #ececf9';
-    };
-    textarea.onblur = () => {
-      textarea.style.borderColor = '#ced4da';
-      textarea.style.boxShadow = 'none';
-    };
 
     const btnRow = document.createElement('div');
     btnRow.style.display = 'flex';
