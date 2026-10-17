@@ -30,6 +30,8 @@ export interface PdfViewerProps {
   renderLoading?: () => React.ReactNode;
   renderError?: (error: string, retry: () => void) => React.ReactNode;
   enablePinchZoom?: boolean;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
 export interface PdfToolbarProps {
@@ -58,6 +60,8 @@ export interface PdfToolbarProps {
   showUpload?: boolean;
   onToggleProperties?: () => void;
   isPropertiesOpen?: boolean;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
   className?: string;
   style?: React.CSSProperties;
 }

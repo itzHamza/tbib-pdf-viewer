@@ -1,6 +1,8 @@
 import type { PDFPageProxy } from 'pdfjs-dist';
+import { TextLayer } from 'pdfjs-dist';
 import { PageDimensions } from '../types';
 import { extractPageTextQuads, PageTextLayerData } from '../annotations/highlight-detector';
+import { injectTextLayerStyles } from './text-layer-style';
 
 export interface PageViewCallbacks {
   onRenderComplete?: (pageNumber: number) => void;
@@ -11,12 +13,14 @@ export class PageView {
   public readonly pageNumber: number;
   public readonly container: HTMLElement;
   public readonly pdfCanvas: HTMLCanvasElement;
+  public readonly textLayerDiv: HTMLDivElement;
   public readonly annotationCanvas: HTMLCanvasElement;
   public readonly pdfCtx: CanvasRenderingContext2D;
   public readonly annotationCtx: CanvasRenderingContext2D;
 
   private pageProxy: PDFPageProxy | null = null;
   private renderTask: any = null;
+  private textLayerInstance: any = null;
   private isRendered = false;
   private isRendering = false;
   private scale: number;
@@ -35,6 +39,8 @@ export class PageView {
     this.scale = scale;
     this.callbacks = callbacks;
 
+    injectTextLayerStyles();
+
     // Outer page container
     this.container = document.createElement('div');
     this.container.className = 'tbib-pdf-page-container';
@@ -43,7 +49,7 @@ export class PageView {
     this.container.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.15)';
     this.container.style.backgroundColor = '#ffffff';
     this.container.style.margin = '16px auto';
-    this.container.style.userSelect = 'none';
+    this.container.style.userSelect = 'text';
 
     // Layer 1: PDF Canvas
     this.pdfCanvas = document.createElement('canvas');
@@ -54,7 +60,16 @@ export class PageView {
     this.pdfCanvas.style.display = 'block';
     this.pdfCtx = this.pdfCanvas.getContext('2d', { alpha: false })!;
 
-    // Layer 2: Annotation Overlay Canvas
+    // Layer 2: Text Layer (DOM text for native selection and copying)
+    this.textLayerDiv = document.createElement('div');
+    this.textLayerDiv.className = 'textLayer';
+    this.textLayerDiv.style.position = 'absolute';
+    this.textLayerDiv.style.top = '0';
+    this.textLayerDiv.style.left = '0';
+    this.textLayerDiv.style.zIndex = '1';
+    this.textLayerDiv.style.pointerEvents = 'auto';
+
+    // Layer 3: Annotation Overlay Canvas
     this.annotationCanvas = document.createElement('canvas');
     this.annotationCanvas.className = 'tbib-annotation-canvas-layer';
     this.annotationCanvas.style.position = 'absolute';
@@ -62,9 +77,11 @@ export class PageView {
     this.annotationCanvas.style.left = '0';
     this.annotationCanvas.style.display = 'block';
     this.annotationCanvas.style.touchAction = 'none';
+    this.annotationCanvas.style.zIndex = '2';
     this.annotationCtx = this.annotationCanvas.getContext('2d', { alpha: true })!;
 
     this.container.appendChild(this.pdfCanvas);
+    this.container.appendChild(this.textLayerDiv);
     this.container.appendChild(this.annotationCanvas);
   }
 
@@ -139,6 +156,10 @@ export class PageView {
     this.pdfCanvas.style.width = `${width}px`;
     this.pdfCanvas.style.height = `${height}px`;
 
+    // Resize Text Layer
+    this.textLayerDiv.style.width = `${width}px`;
+    this.textLayerDiv.style.height = `${height}px`;
+
     // Resize Annotation overlay canvas
     this.annotationCanvas.width = width * dpr;
     this.annotationCanvas.height = height * dpr;
@@ -156,6 +177,27 @@ export class PageView {
 
       this.renderTask = this.pageProxy.render(renderContext);
       await this.renderTask.promise;
+
+      // Render Text Layer
+      if (this.textLayerInstance) {
+        this.textLayerInstance.cancel();
+        this.textLayerInstance = null;
+      }
+      this.textLayerDiv.innerHTML = '';
+
+      try {
+        const textContentSource = await this.pageProxy.getTextContent();
+        this.textLayerInstance = new TextLayer({
+          textContentSource,
+          container: this.textLayerDiv,
+          viewport: viewport,
+        });
+        await this.textLayerInstance.render();
+      } catch (textErr: any) {
+        if (textErr?.name !== 'AbortException') {
+          console.warn(`Text layer render warning on page ${this.pageNumber}:`, textErr);
+        }
+      }
 
       this.isRendered = true;
       this.isRendering = false;
@@ -193,6 +235,10 @@ export class PageView {
     if (this.renderTask) {
       this.renderTask.cancel();
       this.renderTask = null;
+    }
+    if (this.textLayerInstance) {
+      this.textLayerInstance.cancel();
+      this.textLayerInstance = null;
     }
     this.container.remove();
   }

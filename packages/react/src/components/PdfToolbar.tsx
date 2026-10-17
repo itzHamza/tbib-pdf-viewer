@@ -39,6 +39,8 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   isExporting = false,
   onUploadPdf,
   showUpload = true,
+  isFullscreen = false,
+  onToggleFullscreen,
   theme = 'light',
   className,
   style,
@@ -53,9 +55,12 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
     if (!showProperties) return;
 
     const handleOutside = (e: Event) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowProperties(false);
+      const target = e.target as Node;
+      // If click/touch is inside our toolbar or properties popup, do nothing
+      if (containerRef.current && containerRef.current.contains(target)) {
+        return;
       }
+      setShowProperties(false);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -64,34 +69,42 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
       }
     };
 
-    window.addEventListener('pointerdown', handleOutside, true);
-    window.addEventListener('mousedown', handleOutside, true);
-    window.addEventListener('touchstart', handleOutside, true);
-    window.addEventListener('keydown', handleKeyDown);
+    // Use bubbling phase without aggressive capture, with small timeout to avoid immediate close on the same event
+    const timer = setTimeout(() => {
+      window.addEventListener('pointerdown', handleOutside);
+      window.addEventListener('touchstart', handleOutside);
+      window.addEventListener('keydown', handleKeyDown);
+    }, 10);
 
     return () => {
-      window.removeEventListener('pointerdown', handleOutside, true);
-      window.removeEventListener('mousedown', handleOutside, true);
-      window.removeEventListener('touchstart', handleOutside, true);
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', handleOutside);
+      window.removeEventListener('touchstart', handleOutside);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showProperties]);
 
-  const handleToolClick = (toolItem: ToolItem) => {
+  const handleToolClick = (toolItem: ToolItem, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
     if (toolItem.id === currentTool) {
       // 2nd click on already active tool: toggle properties panel
       if (toolItem.hasStyles) {
         setShowProperties((prev) => !prev);
       }
     } else {
-      // 1st click: just activate the tool without popping up the menu
+      // 1st click: just activate the tool
       if (onToolChange) onToolChange(toolItem.id);
       if (annotator) annotator.setTool(toolItem.id);
       setShowProperties(false);
     }
   };
 
-  const handleToolDoubleClick = (toolItem: ToolItem) => {
+  const handleToolDoubleClick = (toolItem: ToolItem, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
     if (toolItem.hasStyles) {
       if (toolItem.id !== currentTool) {
         if (onToolChange) onToolChange(toolItem.id);
@@ -184,9 +197,9 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                 key={t.id}
                 type="button"
                 className="tbib-tool-btn"
-                title={`${t.label} (${t.keyBadge})`}
-                onClick={() => handleToolClick(t)}
-                onDoubleClick={() => handleToolDoubleClick(t)}
+                title={`${t.label} (${t.keyBadge})${isActive && t.hasStyles ? ' - Cliquer à nouveau pour les options' : ''}`}
+                onClick={(e) => handleToolClick(t, e)}
+                onDoubleClick={(e) => handleToolDoubleClick(t, e)}
                 style={{
                   position: 'relative',
                   display: 'flex',
@@ -224,40 +237,56 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               >
                 <i className={t.iconClass} style={{ fontSize: '14px' }} />
                 {isActive && t.hasStyles && (
+                  <>
+                    <span
+                      style={{
+                        position: 'absolute',
+                        bottom: '2px',
+                        left: '4px',
+                        width: '4px',
+                        height: '4px',
+                        borderRadius: '50%',
+                        backgroundColor: currentColor || '#6965db',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                    <svg
+                      width="6"
+                      height="6"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{
+                        position: 'absolute',
+                        bottom: '2px',
+                        right: '3px',
+                        opacity: 0.8,
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </>
+                )}
+                {!isActive && (
                   <span
+                    className="tbib-key-badge"
                     style={{
                       position: 'absolute',
+                      right: '2px',
                       bottom: '2px',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      width: '4px',
-                      height: '4px',
-                      borderRadius: '50%',
-                      backgroundColor: currentColor || '#6965db',
-                      pointerEvents: 'none',
+                      fontSize: '8px',
+                      lineHeight: '1',
+                      color: isDark ? '#64748b' : '#adb5bd',
+                      fontWeight: 500,
                     }}
-                  />
+                  >
+                    {t.keyBadge}
+                  </span>
                 )}
-                <span
-                  className="tbib-key-badge"
-                  style={{
-                    position: 'absolute',
-                    right: '2px',
-                    bottom: '2px',
-                    fontSize: '8px',
-                    lineHeight: '1',
-                    color: isActive
-                      ? isDark
-                        ? '#8581f2'
-                        : '#6965db'
-                      : isDark
-                      ? '#64748b'
-                      : '#adb5bd',
-                    fontWeight: 500,
-                  }}
-                >
-                  {t.keyBadge}
-                </span>
               </button>
             );
           })}
@@ -459,6 +488,49 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
               )}
+            </button>
+          </>
+        )}
+        {/* Fullscreen Button */}
+        {onToggleFullscreen && (
+          <>
+            <div
+              style={{
+                width: '1px',
+                height: '20px',
+                backgroundColor: isDark ? '#33394b' : '#e9ecef',
+                margin: '0 1px',
+                flexShrink: 0,
+              }}
+            />
+            <button
+              type="button"
+              className="tbib-action-btn"
+              title={isFullscreen ? 'Quitter le plein écran (F11)' : 'Plein écran (F11)'}
+              onClick={onToggleFullscreen}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '30px',
+                height: '35px',
+                border: 'none',
+                borderRadius: '6px',
+                backgroundColor: isFullscreen ? (isDark ? '#2c2b54' : '#ececf9') : 'transparent',
+                color: isFullscreen ? (isDark ? '#8581f2' : '#6965db') : (isDark ? '#cbd5e1' : '#495057'),
+                cursor: 'pointer',
+                padding: 0,
+                flexShrink: 0,
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!isFullscreen) e.currentTarget.style.backgroundColor = isDark ? '#282e3f' : '#f1f3f5';
+              }}
+              onMouseLeave={(e) => {
+                if (!isFullscreen) e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <i className={isFullscreen ? 'fa-solid fa-compress' : 'fa-solid fa-expand'} style={{ fontSize: '13px' }} />
             </button>
           </>
         )}

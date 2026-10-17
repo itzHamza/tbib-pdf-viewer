@@ -1,5 +1,11 @@
 # @tbib-pdf-viewer/react
 
+## 0.2.1
+
+### Patch Changes
+
+- Fix tool properties menu double-click/second-click opening, prevent mobile pinch zoom canvas black screen flickering by default
+
 ## 0.2.0
 
 ### Minor Changes

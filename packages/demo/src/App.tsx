@@ -33,7 +33,33 @@ export default function App() {
   const [activeSampleTitle, setActiveSampleTitle] = useState<string>('Multi-Page Exam');
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [containerSize, setContainerSize] = useState<'full' | 'inline'>('full');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const viewerWrapperRef = useRef<HTMLDivElement>(null);
   const annotatorRef = useRef<PdfAnnotator | null>(null);
+
+  const toggleFullscreen = () => {
+    const target = viewerWrapperRef.current;
+    if (!target) return;
+
+    if (!document.fullscreenElement) {
+      target.requestFullscreen?.().catch((err) => {
+        console.warn('Error entering fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen?.().catch((err) => {
+        console.warn('Error exiting fullscreen:', err);
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   // Load initial sample
   useEffect(() => {
@@ -353,14 +379,15 @@ export default function App() {
       >
         {/* The PDF Viewer Box (Self-contained, responsive inline component) */}
         <div
+          ref={viewerWrapperRef}
           style={{
             position: 'relative',
-            width: containerSize === 'inline' ? '65vw' : '100%',
-            height: containerSize === 'inline' ? '82vh' : '100%',
+            width: isFullscreen ? '100vw' : containerSize === 'inline' ? '65vw' : '100%',
+            height: isFullscreen ? '100vh' : containerSize === 'inline' ? '82vh' : '100%',
             backgroundColor: '#f8f9fa',
-            borderRadius: containerSize === 'inline' ? '12px' : '0',
-            boxShadow: containerSize === 'inline' ? '0 10px 30px rgba(0, 0, 0, 0.15)' : 'none',
-            border: containerSize === 'inline' ? '1px solid #ced4da' : 'none',
+            borderRadius: isFullscreen ? '0' : containerSize === 'inline' ? '12px' : '0',
+            boxShadow: isFullscreen ? 'none' : containerSize === 'inline' ? '0 10px 30px rgba(0, 0, 0, 0.15)' : 'none',
+            border: isFullscreen ? 'none' : containerSize === 'inline' ? '1px solid #ced4da' : 'none',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
@@ -390,6 +417,8 @@ export default function App() {
               onOpacityChange={setOpacity}
               onExportPdf={handleExportPdf}
               isExporting={isExporting}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
             />
           </div>
 

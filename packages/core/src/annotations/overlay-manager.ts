@@ -85,6 +85,13 @@ export class OverlayManager {
 
     for (const pv of this.pageViews.values()) {
       pv.annotationCanvas.style.cursor = cursor;
+      if (this.currentTool === 'pan' || this.currentTool === 'select') {
+        pv.textLayerDiv.style.pointerEvents = 'auto';
+        pv.container.style.userSelect = 'text';
+      } else {
+        pv.textLayerDiv.style.pointerEvents = 'none';
+        pv.container.style.userSelect = 'none';
+      }
     }
   }
 
@@ -391,15 +398,15 @@ export class OverlayManager {
   }
 
   private attachEvents(pageView: PageView): void {
-    const canvas = pageView.annotationCanvas;
+    const container = pageView.container;
 
-    canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e, pageView));
+    container.addEventListener('pointerdown', (e) => this.handlePointerDown(e, pageView));
     window.addEventListener('pointermove', (e) => this.handlePointerMove(e));
     window.addEventListener('pointerup', (e) => this.handlePointerUp(e));
     window.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
 
     // Double click to edit text annotation in select mode
-    canvas.addEventListener('dblclick', (e) => {
+    container.addEventListener('dblclick', (e) => {
       if (this.currentTool === 'select') {
         const pt = pageView.screenToPdfPoint(e.clientX, e.clientY);
         const scale = pageView.getDimensions().scale;
@@ -448,7 +455,14 @@ export class OverlayManager {
       return;
     }
 
+    const targetEl = e.target as HTMLElement;
+    const isTextSpan = Boolean(targetEl && (targetEl.tagName === 'SPAN' || targetEl.closest('.textLayer span')));
+
     if (this.currentTool === 'pan') {
+      // If user clicks on actual text, allow native text selection
+      if (isTextSpan) {
+        return;
+      }
       e.preventDefault();
       this.isPanning = true;
       this.panStartX = e.clientX;
@@ -462,6 +476,26 @@ export class OverlayManager {
       }
       this.updateCursors();
       return;
+    }
+
+    // In select mode, if clicking on text span and not an annotation, let user select text
+    if (this.currentTool === 'select' && isTextSpan) {
+      const pt = pageView.screenToPdfPoint(e.clientX, e.clientY);
+      const scale = pageView.getDimensions().scale;
+      const pageAnns = this.annotations.filter((a) => a.page === pageView.pageNumber);
+      const hitAnnotation = pageAnns.find((ann) => {
+        if (ann.type === 'text') return isPointInTextAnnotation(pt.x * scale, pt.y * scale, ann as TextAnnotation, scale);
+        if (ann.type === 'note') return isPointInNote(pt.x * scale, pt.y * scale, ann as NoteAnnotation, scale);
+        if (ann.type === 'rectangle' || ann.type === 'ellipse') {
+          const s = ann as ShapeAnnotation;
+          return pt.x >= s.x && pt.x <= s.x + s.width && pt.y >= s.y && pt.y <= s.y + s.height;
+        }
+        return false;
+      });
+
+      if (!hitAnnotation) {
+        return;
+      }
     }
 
     e.preventDefault();

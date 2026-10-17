@@ -18,7 +18,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   className,
   style,
   enableLazyRendering = true,
-  enablePinchZoom = true,
+  enablePinchZoom = false,
+  isFullscreen,
+  onToggleFullscreen,
   onPageChange,
   onScannedPageDetected,
   onAnnotatorReady,
@@ -27,10 +29,44 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   renderLoading,
   renderError,
 }) => {
+  const outerWrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const annotatorRef = useRef<PdfAnnotator | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(pdfSrc));
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Fullscreen toggle handler
+  const handleToggleFullscreen = useCallback(() => {
+    if (onToggleFullscreen) {
+      onToggleFullscreen();
+      return;
+    }
+    const target = outerWrapperRef.current || containerRef.current;
+    if (!target) return;
+
+    if (!document.fullscreenElement) {
+      target.requestFullscreen?.().catch((err) => {
+        console.warn('Error requesting fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen?.().catch((err) => {
+        console.warn('Error exiting fullscreen:', err);
+      });
+    }
+  }, [onToggleFullscreen]);
+
+  // Global F11 shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        handleToggleFullscreen();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleFullscreen]);
 
   const handleLoadingChange = useCallback(
     (loading: boolean) => {
@@ -216,6 +252,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   return (
     <div
+      ref={outerWrapperRef}
       style={{
         position: 'relative',
         width: '100%',
