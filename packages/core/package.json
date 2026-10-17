@@ -1,6 +1,6 @@
 {
   "name": "@tbib-pdf-viewer/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Framework-agnostic engine for PDF viewing and annotations",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

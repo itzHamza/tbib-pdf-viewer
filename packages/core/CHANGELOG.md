@@ -1,5 +1,12 @@
 # @tbib-pdf-viewer/core
 
+## 0.2.1
+
+### Patch Changes
+
+- Add DOM TextLayer rendering with standard styles for high-fidelity text selection and native copying in Pan and Select modes
+- Handle pointer event pass-through on text spans while keeping background pan and annotation dragging fluid
+
 ## 0.2.0
 
 ### Minor Changes

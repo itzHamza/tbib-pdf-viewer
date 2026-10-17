@@ -1,5 +1,13 @@
 # @tbib-pdf-viewer/react
 
+## 0.2.2
+
+### Patch Changes
+
+- Add Fullscreen mode support with F11 keyboard shortcut, Escape key exit, and dedicated toolbar toggle button
+- Enable text selection and native copying in Pan and Select modes via updated `@tbib-pdf-viewer/core@0.2.1`
+- Expose `isFullscreen` and `onToggleFullscreen` props on `<PdfViewer>` and `<PdfToolbar>`
+
 ## 0.2.1
 
 ### Patch Changes
